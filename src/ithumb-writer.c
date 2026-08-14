@@ -130,10 +130,22 @@ pack_RGB_565 (GdkPixbuf *pixbuf, const Itdb_ArtworkFormat *img_info,
 
 	dest_width = get_aligned_width (img_info, sizeof(guint16));
 
-	/* Make sure thumb size calculation won't overflow */
+	/* Make sure thumb size calculation won't overflow.
+	 *
+	 * Bug fix: the original guards were
+	 *     g_return_val_if_fail (dest_width < (gint)G_MAXUINT/2, NULL);
+	 * which is broken: (gint)G_MAXUINT == -1, so -1/2 == 0, and the
+	 * predicate `dest_width < 0` is always false for any sane width.
+	 * Result: pack_RGB_565 returned NULL for every iPod cover-art format,
+	 * silently producing an empty ArtworkDB with no .ithmb files.
+	 *
+	 * The intent is to guard the multiplication on the next line against
+	 * overflowing guint32 (*thumb_size). We compare against G_MAXUINT
+	 * directly (as guint) so the implicit gint→guint promotion of
+	 * dest_width gives the comparison sensible semantics. */
 	g_return_val_if_fail (dest_width != 0, NULL);
-	g_return_val_if_fail (dest_width < (gint)G_MAXUINT/2, NULL);
-	g_return_val_if_fail (img_info->height < (gint)G_MAXUINT/(2*dest_width), NULL);
+	g_return_val_if_fail ((guint)dest_width < G_MAXUINT/2, NULL);
+	g_return_val_if_fail ((guint)img_info->height < G_MAXUINT/(2*(guint)dest_width), NULL);
 	*thumb_size = dest_width * img_info->height * 2;
 	result = g_malloc0 (*thumb_size);
 
@@ -236,10 +248,11 @@ pack_RGB_555 (GdkPixbuf *pixbuf, const Itdb_ArtworkFormat *img_info,
 
 	dest_width = get_aligned_width (img_info, sizeof(guint16));
 
-	/* Make sure thumb size calculation won't overflow */
+	/* Make sure thumb size calculation won't overflow
+	 * (see pack_RGB_565 above for the original (gint)G_MAXUINT bug). */
 	g_return_val_if_fail (dest_width != 0, NULL);
-	g_return_val_if_fail (dest_width < (gint)G_MAXUINT/2, NULL);
-	g_return_val_if_fail (img_info->height < (gint)G_MAXUINT/(2*dest_width), NULL);
+	g_return_val_if_fail ((guint)dest_width < G_MAXUINT/2, NULL);
+	g_return_val_if_fail ((guint)img_info->height < G_MAXUINT/(2*(guint)dest_width), NULL);
 	*thumb_size = dest_width * img_info->height * 2;
 	result = g_malloc0 (*thumb_size);
 
@@ -340,10 +353,11 @@ pack_RGB_888 (GdkPixbuf *pixbuf, const Itdb_ArtworkFormat *img_info,
 	g_return_val_if_fail (((height + vertical_padding) <= img_info->height), NULL);
 	g_return_val_if_fail ((width <= img_info->width) && (height <= img_info->height), NULL);
 
-	/* Make sure thumb size calculation won't overflow */
+	/* Make sure thumb size calculation won't overflow
+	 * (see pack_RGB_565 above for the original (gint)G_MAXUINT bug). */
 	g_return_val_if_fail (img_info->width != 0, NULL);
-	g_return_val_if_fail (img_info->width < (gint)G_MAXUINT/4, NULL);
-	g_return_val_if_fail (img_info->height < (gint)G_MAXUINT/(4*img_info->width), NULL);
+	g_return_val_if_fail ((guint)img_info->width < G_MAXUINT/4, NULL);
+	g_return_val_if_fail ((guint)img_info->height < G_MAXUINT/(4*(guint)img_info->width), NULL);
 	*thumb_size = img_info->width * img_info->height * 4;
 	result = g_malloc0 (*thumb_size);
 
@@ -402,9 +416,10 @@ static guint16 *derange_pixels (guint16 *pixels_s, guint16 *pixels_d,
 
     if (pixels_s == NULL)
     {
+	/* (see pack_RGB_565 above for the original (gint)G_MAXUINT bug). */
 	g_return_val_if_fail (width != 0, NULL);
-	g_return_val_if_fail (width < (gint)G_MAXUINT/(gint)sizeof (guint16), NULL);
-	g_return_val_if_fail (height < (gint)G_MAXUINT/((gint)sizeof (guint16)*width), NULL);
+	g_return_val_if_fail ((guint)width < G_MAXUINT/sizeof (guint16), NULL);
+	g_return_val_if_fail ((guint)height < G_MAXUINT/(sizeof (guint16)*(guint)width), NULL);
 
 	pixels_s = g_malloc0 (sizeof (guint16)*width*height);
 
@@ -497,10 +512,11 @@ pack_I420 (GdkPixbuf *orig_pixbuf, const Itdb_ArtworkFormat *img_info,
 		  "rowstride", &rowstride,
 		  "pixels", &pixels, NULL);
 
-    /* Make sure yuvsize calculation won't overflow */
+    /* Make sure yuvsize calculation won't overflow
+     * (see pack_RGB_565 above for the original (gint)G_MAXUINT bug). */
     g_return_val_if_fail (height != 0, NULL);
-    g_return_val_if_fail (height < (gint)G_MAXUINT/2, NULL);
-    g_return_val_if_fail (width < (gint)G_MAXUINT/(2*height), NULL);
+    g_return_val_if_fail ((guint)height < G_MAXUINT/2, NULL);
+    g_return_val_if_fail ((guint)width < G_MAXUINT/(2*(guint)height), NULL);
 
     halfyuv = width*height;
 
@@ -586,10 +602,11 @@ pack_UYVY (GdkPixbuf *orig_pixbuf, const Itdb_ArtworkFormat *img_info,
 		  "rowstride", &rowstride,
 		  "pixels", &pixels, NULL);
 
-    /* Make sure yuvsize calculation won't overflow */
+    /* Make sure yuvsize calculation won't overflow
+     * (see pack_RGB_565 above for the original (gint)G_MAXUINT bug). */
     g_return_val_if_fail (height != 0, NULL);
-    g_return_val_if_fail (height < (gint)G_MAXUINT/2, NULL);
-    g_return_val_if_fail (width < (gint)G_MAXUINT/(2*height), NULL);
+    g_return_val_if_fail ((guint)height < G_MAXUINT/2, NULL);
+    g_return_val_if_fail ((guint)width < G_MAXUINT/(2*(guint)height), NULL);
 
     yuvsize = width*2*height;
 
