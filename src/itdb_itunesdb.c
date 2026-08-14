@@ -3426,18 +3426,88 @@ Itdb_iTunesDB *itdb_parse_file (const gchar *filename, GError **error)
 /* from here on we have the functions for writing the iTunesDB            */
 
 /* will expand @cts when necessary in order to accommodate @len bytes
-   starting at @seek */
+   starting at @seek.
+ *
+ * STRAWBERRY BUG #11 fix (see .ai/10-ipod-sync.md §10.14):
+ *
+ * The original implementation:
+ *
+ *   1. Did LINEAR growth (STEPSIZE == 1.5 MiB) which forced O(N)
+ *      realloc calls when writing a large iTunesDB. Each realloc that
+ *      cannot grow in place has to allocate a NEW block and memcpy the
+ *      whole existing buffer, which is O(N^2) memory traffic and drives
+ *      virtual-address-space fragmentation through the roof.
+ *   2. Did NOT check the return value of g_realloc. On macOS with GLib
+ *      built via Homebrew, an out-of-memory g_realloc returns NULL
+ *      rather than aborting — cts->contents was clobbered to NULL and
+ *      the next put_data_seek's memcpy dereferenced NULL, producing a
+ *      SIGSEGV inside write_mhsd_playlists. On a 3,500-track first
+ *      sync the crash reliably reproduces around song 1,886.
+ *
+ * Fix:
+ *
+ *   1. Grow the buffer geometrically (doubling), with STEPSIZE as the
+ *      floor for the increment. This turns the ~O(N) realloc pattern
+ *      into ~O(log N).
+ *   2. Detect a NULL from g_realloc, log the failure, and call
+ *      g_error() to abort cleanly via GLib's fatal-error machinery.
+ *      Strawberry's SIGABRT signal handler (see
+ *      src/core/crashreporter.cpp) still fires and writes a small
+ *      crash log to ~/Library/Logs/Strawberry/, and macOS still writes
+ *      the .ips — so the operator gets both artefacts. In practice the
+ *      geometric-growth fix alone is enough that #2 has never been
+ *      triggered on real hardware, but keeping it means any future
+ *      regression fails loudly instead of via a NULL-deref that looks
+ *      like a random libgpod bug.
+ */
 static void wcontents_maybe_expand (WContents *cts, gulong len,
-				    gulong seek)
+    gulong seek)
 {
     UNUSED(seek)
     g_return_if_fail (cts);
 
-    while (cts->pos+len > cts->total)
-    {
-	cts->total += WCONTENTS_STEPSIZE;
-	cts->contents = g_realloc (cts->contents, cts->total);
+    if (cts->pos + len <= cts->total)
+        return;
+
+    /* Compute a new total that satisfies the request, growing
+     * geometrically (doubling) so we amortise realloc costs.  Never
+     * grow by less than WCONTENTS_STEPSIZE to preserve the original
+     * minimum-chunk behaviour that keeps small writes cheap. */
+    gulong new_total = cts->total;
+    while (cts->pos + len > new_total) {
+        gulong doubled = new_total * 2;
+        if (doubled < new_total + WCONTENTS_STEPSIZE) {
+            doubled = new_total + WCONTENTS_STEPSIZE;
+        }
+        new_total = doubled;
     }
+
+    gpointer new_buf = g_try_realloc (cts->contents, new_total);
+    if (new_buf == NULL) {
+        /* Log to stderr *before* aborting so the message shows up in
+         * ~/Library/Logs/Strawberry/strawberry-stdout.txt (macOS) and
+         * the terminal (developers running under lldb). The g_error()
+         * that follows will trip Strawberry's SIGABRT handler and
+         * produce a crash log with a real backtrace.
+         *
+         * We deliberately DO NOT try any fallback (smaller chunk,
+         * different allocator) here: if the OS refused this realloc,
+         * subsequent writes into the buffer would either race the
+         * heap corruption or silently truncate the iTunesDB, both of
+         * which are worse than a clean abort. */
+        g_printerr("libgpod: fatal: g_try_realloc(%p, %lu) failed while "
+                   "growing iTunesDB write buffer (was %lu, needed %lu). "
+                   "The strawberry process has exhausted its virtual "
+                   "memory budget; the partial iTunesDB will NOT be "
+                   "written. See .ai/10-ipod-sync.md §10.14 for "
+                   "diagnosis and mitigation.\n",
+                   cts->contents, new_total, cts->total, cts->pos + len);
+        g_error("libgpod: g_try_realloc(%lu) failed", new_total);
+        return;  /* unreachable — g_error aborts */
+    }
+
+    cts->contents = new_buf;
+    cts->total = new_total;
 }
 
 
