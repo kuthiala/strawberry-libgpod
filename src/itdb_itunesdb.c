@@ -384,7 +384,7 @@ static void fcontents_free (FContents *cts)
 
 static void itdb_fsync (void)
 {
-#ifndef WIN32
+#ifndef _WIN32
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wimplicit-function-declaration"
     sync();
@@ -1237,7 +1237,7 @@ static gboolean playcounts_init (FImport *fimp)
   const gchar *plcpl[] = {"PlayCounts.plist", NULL};
   gchar *plcname, *dirname, *istname, *plcplname;
   gboolean result=TRUE;
-  struct stat filestat;
+  GStatBuf filestat;
   FContents *cts;
   GValue *plist_data;
 
@@ -1260,7 +1260,7 @@ static gboolean playcounts_init (FImport *fimp)
   {
       /* skip if playcounts file has zero-length (often happens after
        * dosfsck) */
-      stat (plcname, &filestat);
+      g_stat (plcname, &filestat);
       if (filestat.st_size >= 0x60)
       {
 	  cts = fcontents_read (plcname, &fimp->error);
@@ -1279,7 +1279,7 @@ static gboolean playcounts_init (FImport *fimp)
   {
       /* skip if iTunesStats file has zero-length (often happens after
        * dosfsck) */
-      stat (istname, &filestat);
+      g_stat (istname, &filestat);
       if (filestat.st_size >= 0x06)
       {
 	  cts = fcontents_read (istname, &fimp->error);
@@ -1297,7 +1297,7 @@ static gboolean playcounts_init (FImport *fimp)
   else if (plcplname)
   {
       /* skip if PlayCounts.plist file has zero-length */
-      stat (plcplname, &filestat);
+      g_stat (plcplname, &filestat);
       if (filestat.st_size > 0)
       {
 	  plist_data = itdb_plist_parse_from_file (plcplname, &fimp->error);
@@ -7501,7 +7501,7 @@ Itdb_Track *itdb_cp_finalize (Itdb_Track *track,
     const gchar *suffix;
     Itdb_Track *use_track;
     gint mplen;
-    struct stat statbuf;
+    GStatBuf statbuf;
 
     /* either supply mountpoint or track */
     g_return_val_if_fail (mountpoint || track, NULL);
@@ -7523,7 +7523,7 @@ Itdb_Track *itdb_cp_finalize (Itdb_Track *track,
 	return NULL;
     }
 
-    if (stat (dest_filename, &statbuf) == -1)
+    if (g_stat (dest_filename, &statbuf) == -1)
     {
 	g_set_error (error,
 		     G_FILE_ERROR,

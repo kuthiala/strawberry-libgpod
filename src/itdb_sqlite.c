@@ -187,13 +187,13 @@ static int mk_Dynamic(Itdb_iTunesDB *itdb, const char *outpath)
     sqlite3 *db = NULL;
     sqlite3_stmt *stmt = NULL;
     char *errmsg = NULL;
-    struct stat fst;
+    GStatBuf fst;
     int idx = 0;
     GList *gl = NULL;
 
     dbf = g_build_filename(outpath, "Dynamic.itdb", NULL);
     printf("[%s] Processing '%s'\n", __func__, dbf);
-    if (stat(dbf, &fst) != 0) {
+    if (g_stat (dbf, &fst) != 0) {
 	if (errno == ENOENT) {
 	    /* file is not present. so we'll create it */
 	} else {
@@ -363,12 +363,12 @@ static int mk_Extras(Itdb_iTunesDB *itdb, const char *outpath)
     sqlite3 *db = NULL;
     sqlite3_stmt *stmt_chapter = NULL;
     char *errmsg = NULL;
-    struct stat fst;
+    GStatBuf fst;
     GList *gl = NULL;
 
     dbf = g_build_filename(outpath, "Extras.itdb", NULL);
     printf("[%s] Processing '%s'\n", __func__, dbf);
-    if (stat(dbf, &fst) != 0) {
+    if (g_stat (dbf, &fst) != 0) {
 	if (errno == ENOENT) {
 	    /* file is not present. so we need to create the tables in it ;) */
 	    rebuild = 1;
@@ -477,11 +477,11 @@ static int mk_Genius(Itdb_iTunesDB *itdb, const char *outpath)
     gchar *dbf = NULL;
     sqlite3 *db = NULL;
     char *errmsg = NULL;
-    struct stat fst;
+    GStatBuf fst;
 
     dbf = g_build_filename(outpath, "Genius.itdb", NULL);
     printf("[%s] Processing '%s'\n", __func__, dbf);
-    if (stat(dbf, &fst) != 0) {
+    if (g_stat (dbf, &fst) != 0) {
 	if (errno == ENOENT) {
 	    /* file is not present. so we need to create the tables in it ;) */
 	    rebuild = 1;
@@ -609,7 +609,7 @@ static int mk_Library(Itdb_iTunesDB *itdb,
     sqlite3_stmt *stmt_composer = NULL;
     sqlite3_stmt *stmt_video_info = NULL;
     char *errmsg = NULL;
-    struct stat fst;
+    GStatBuf fst;
     GList *gl = NULL;
     Itdb_Playlist *dev_playlist = NULL;
     int idx = 0;
@@ -621,7 +621,7 @@ static int mk_Library(Itdb_iTunesDB *itdb,
 
     dbf = g_build_filename(outpath, "Library.itdb", NULL);
     printf("[%s] Processing '%s'\n", __func__, dbf);
-    if (stat(dbf, &fst) != 0) {
+    if (g_stat (dbf, &fst) != 0) {
 	if (errno == ENOENT) {
 	    /* file is not present. so we will create it */
 	} else {

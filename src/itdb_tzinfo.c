@@ -44,7 +44,7 @@
     extern __IMPORT long _timezone;
 #endif
 
-static gboolean parse_tzdata (const char *tzname, time_t start, time_t end,
+static gboolean parse_tzdata (const char *zone_name, time_t start, time_t end,
 			      int *offset, gboolean *has_dst, int *dst_offset);
 
 /* Mac epoch is 1st January 1904 00:00 in local time */
@@ -89,12 +89,12 @@ get_preferences_path (const Itdb_Device *device)
 
 static gboolean itdb_device_read_raw_timezone (const char *prefs_path,
                                                glong offset,
-                                               gint16 *_timezone)
+                                               gint16 *raw_tz)
 {
     FILE *f;
     int result;
 
-    if (_timezone == NULL) {
+    if (raw_tz == NULL) {
         return FALSE;
     }
 
@@ -109,7 +109,7 @@ static gboolean itdb_device_read_raw_timezone (const char *prefs_path,
         return FALSE;
     }
 
-    result = fread (_timezone, sizeof (*_timezone), 1, f);
+    result = fread (raw_tz, sizeof (*raw_tz), 1, f);
     if (result != 1) {
         fclose (f);
         return FALSE;
@@ -117,7 +117,7 @@ static gboolean itdb_device_read_raw_timezone (const char *prefs_path,
 
     fclose (f);
 
-    *_timezone = GINT16_FROM_LE (*_timezone);
+    *raw_tz = GINT16_FROM_LE (*raw_tz);
 
     return TRUE;
 }
@@ -230,6 +230,12 @@ static gint get_local_timezone (void)
     return seconds_east_utc; /* mimic the old behaviour when global variable 'timezone' from the 'time.h' header was returned */
 #elif defined(__CYGWIN__)   /* !HAVE_STRUCT_TM_TM_GMTOFF */
     return (gint) _timezone * -1; /* global variable defined by time.h, see man tzset */
+#elif defined(_WIN32)
+    /* The CRT's timezone variable is unreliable with UCRT and ignores daylight saving time, ask GLib for the current offset instead (like tm_gmtoff). */
+    GDateTime *now = g_date_time_new_now_local ();
+    const gint seconds_east_utc = (gint) (g_date_time_get_utc_offset (now) / G_USEC_PER_SEC);
+    g_date_time_unref (now);
+    return seconds_east_utc;
 #else /* !HAVE_STRUCT_TM_TM_GMTOFF && !__CYGWIN__ */
     return timezone * -1; /* global variable defined by time.h, see man tzset */
 #endif
@@ -242,9 +248,9 @@ static gint get_local_timezone (void)
 G_GNUC_INTERNAL void itdb_device_set_timezone_info (Itdb_Device *device)
 {
     gint16 raw_timezone;
-    gint _timezone = 0;
+    gint utc_shift = 0;
     gboolean result;
-    struct stat stat_buf;
+    GStatBuf stat_buf;
     int status;
     char *prefs_path;
     guint offset;
@@ -292,16 +298,16 @@ G_GNUC_INTERNAL void itdb_device_set_timezone_info (Itdb_Device *device)
     if (!result) {
 	return;
     }
-    result = raw_timezone_converter (raw_timezone, &_timezone);
+    result = raw_timezone_converter (raw_timezone, &utc_shift);
     if (!result) {
 	return;
     }
 
-    if ((_timezone < -12*3600) || (_timezone > 12 * 3600)) {
+    if ((utc_shift < -12*3600) || (utc_shift > 12 * 3600)) {
         return;
     }
 
-    device->timezone_shift = _timezone;
+    device->timezone_shift = utc_shift;
 }
 
 /*
@@ -332,7 +338,7 @@ G_GNUC_INTERNAL void itdb_device_set_timezone_info (Itdb_Device *device)
 #define TZ_TTINFO_ISDST_OFFSET 4
 
 static gboolean
-parse_tzdata (const char *_tzname, time_t start, time_t end,
+parse_tzdata (const char *zone_name, time_t start, time_t end,
 	      int *offset, gboolean *has_dst, int *dst_offset)
 {
     char *filename, *contents;
@@ -345,7 +351,7 @@ parse_tzdata (const char *_tzname, time_t start, time_t end,
     char initial_isdst, second_isdst;
     int i;
 
-    filename = g_build_filename (ZONEINFO_DIR, _tzname, NULL);
+    filename = g_build_filename (ZONEINFO_DIR, zone_name, NULL);
     if (!g_file_get_contents (filename, &contents, &length, NULL)) {
 	g_free (filename);
 	return FALSE;
